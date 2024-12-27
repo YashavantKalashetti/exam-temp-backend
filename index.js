@@ -2,16 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+const io = new Server(server);
 
 const rooms = new Map();
 
@@ -20,12 +14,16 @@ io.on('connection', (socket) => {
     socket.join(roomId);
     
     if (!rooms.has(roomId)) {
-      rooms.set(roomId, new Set());
+      rooms.set(roomId, { laptop: null, phone: null });
     }
-    rooms.get(roomId).add(socket.id);
     
-    if (rooms.get(roomId).size === 2) {
-      io.to(roomId).emit('ready');
+    const room = rooms.get(roomId);
+    room[deviceType] = socket.id;
+    
+    console.log(`${deviceType} joined room: ${roomId}`);
+    
+    if (room.laptop && room.phone) {
+      io.to(roomId).emit('start-connection', { deviceType });
     }
   });
 
@@ -42,17 +40,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    rooms.forEach((peers, roomId) => {
-      if (peers.has(socket.id)) {
-        peers.delete(socket.id);
-        if (peers.size === 0) {
-          rooms.delete(roomId);
-        }
-        io.to(roomId).emit('peer-disconnected');
+    rooms.forEach((devices, roomId) => {
+      if (devices.laptop === socket.id) {
+        devices.laptop = null;
+        io.to(roomId).emit('device-disconnected', 'laptop');
+      }
+      if (devices.phone === socket.id) {
+        devices.phone = null;
+        io.to(roomId).emit('device-disconnected', 'phone');
+      }
+      if (!devices.laptop && !devices.phone) {
+        rooms.delete(roomId);
       }
     });
   });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(process.env.PORT, () => console.log('Server running on port 3001'));
