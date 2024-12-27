@@ -6,18 +6,12 @@ const app = express();
 const server = http.createServer(app);
 
 // CORS configuration for Express
-const allowedOrigins = ["https://exam-temp.onrender.com", "http://localhost:3000"];
+const allowedOrigins = ["https://exam-temp.onrender.com", "http://localhost:3000", "http://exam-temp.onrender.com"];
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: allowedOrigins,    // Allow requests from these origins
     methods: ["GET", "POST"],
-    credentials: true,
+    credentials: true,         // Allow credentials (cookies)
   })
 );
 
