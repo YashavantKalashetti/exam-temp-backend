@@ -2,88 +2,99 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
-// Store peer connections by examId
-let peers = {};
+// Store active connections
+const rooms = new Map();
 
+app.use(cors());
 app.use(express.static('public'));
 
-// When a new client connects
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
   socket.on('joinRoom', ({ examId, role }) => {
-    if (!peers[examId]) {
-      peers[examId] = { laptop: null, mobile: null };
+    // Create room if it doesn't exist
+    if (!rooms.has(examId)) {
+      rooms.set(examId, { laptop: null, mobile: null });
     }
-
-    // Assign the client to the appropriate role (laptop or mobile)
-    peers[examId][role] = socket.id;
-    console.log(`${role} joined room: ${examId}`);
-
+    
+    const room = rooms.get(examId);
+    room[role] = socket.id;
+    
     socket.join(examId);
+    console.log(`${role} joined room ${examId}`);
 
-    // If both devices are connected, start signaling
-    if (peers[examId].laptop && peers[examId].mobile) {
-      io.to(peers[examId].laptop).emit('startVideoSync', { role: 'laptop' });
-      io.to(peers[examId].mobile).emit('startVideoSync', { role: 'mobile' });
+    // If both peers are connected, initiate connection
+    if (room.laptop && room.mobile) {
+      io.to(examId).emit('ready', { examId });
     }
   });
 
-  // Handle offer signaling from one peer to another
-  socket.on('offer', ({ offer, examId }) => {
-    const otherRole = examId && peers[examId].laptop && peers[examId].mobile;
-    const otherSocket = peers[examId]?.laptop || peers[examId]?.mobile;
-
-    if (otherSocket) {
-      io.to(otherSocket).emit('offer', { offer, examId });
+  // Handle WebRTC signaling
+  socket.on('offer', ({ offer, examId, targetRole }) => {
+    const room = rooms.get(examId);
+    if (room) {
+      const targetId = room[targetRole];
+      if (targetId) {
+        io.to(targetId).emit('offer', { offer, examId });
+      }
     }
   });
 
-  // Handle answer signaling
-  socket.on('answer', ({ answer, examId }) => {
-    const otherSocket = peers[examId]?.laptop || peers[examId]?.mobile;
-
-    if (otherSocket) {
-      io.to(otherSocket).emit('answer', { answer });
+  socket.on('answer', ({ answer, examId, targetRole }) => {
+    const room = rooms.get(examId);
+    if (room) {
+      const targetId = room[targetRole];
+      if (targetId) {
+        io.to(targetId).emit('answer', { answer, examId });
+      }
     }
   });
 
-  // Handle ICE candidate signaling
-  socket.on('candidate', ({ candidate, examId }) => {
-    const otherSocket = peers[examId]?.laptop || peers[examId]?.mobile;
-
-    if (otherSocket) {
-      io.to(otherSocket).emit('candidate', { candidate });
+  socket.on('iceCandidate', ({ candidate, examId, targetRole }) => {
+    const room = rooms.get(examId);
+    if (room) {
+      const targetId = room[targetRole];
+      if (targetId) {
+        io.to(targetId).emit('iceCandidate', { candidate, examId });
+      }
     }
   });
 
-  // Handle disconnects
+  // Handle disconnection
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
-
-    for (const examId in peers) {
-      for (const role in peers[examId]) {
-        if (peers[examId][role] === socket.id) {
-          peers[examId][role] = null;
-          break;
-        }
+    
+    // Remove disconnected peer from rooms
+    rooms.forEach((room, examId) => {
+      if (room.laptop === socket.id) {
+        room.laptop = null;
+        io.to(examId).emit('peerDisconnected', { role: 'laptop' });
       }
-
-      // If both devices are disconnected, remove the examId entry
-      if (!peers[examId].laptop && !peers[examId].mobile) {
-        delete peers[examId];
+      if (room.mobile === socket.id) {
+        room.mobile = null;
+        io.to(examId).emit('peerDisconnected', { role: 'mobile' });
       }
-    }
+      
+      // Clean up empty rooms
+      if (!room.laptop && !room.mobile) {
+        rooms.delete(examId);
+      }
+    });
   });
 });
 
-// Start server
-const port = process.env.PORT || 3001;
-server.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
