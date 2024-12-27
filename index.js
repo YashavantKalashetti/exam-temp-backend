@@ -17,6 +17,10 @@ app.get('/', (req, res) => {
   res.render('index'); // Serve the EJS template
 });
 
+app.get('/laptop', (req, res) => {
+  res.send('Hello from the laptop');
+});
+
 io.on('connection', (socket) => {
   console.log('A user connected: ' + socket.id);
 
