@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exam Monitoring System</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.10.0/simple-peer.min.js"></script>
+  <style>
+    /* Add your styles here */
+    .video-container { display: flex; }
+    .video { margin: 10px; }
+    #myVideo, #userVideo { width: 300px; }
+  </style>
+</head>
+<body>
+  <h1>Exam Monitoring System</h1>
+  <div class="container">
+    <div class="video-container">
+      <div class="video">
+        <video id="myVideo" playsinline muted autoplay></video>
+      </div>
+      <div class="video">
+        <video id="userVideo" playsinline autoplay></video>
+      </div>  
+    </div>
+
+    <div class="myId">
+      <input type="text" id="name" placeholder="Name" />
+      <button id="copyId">Copy ID</button>
+      <input type="text" id="idToCall" placeholder="ID to Call" />
+      <div>
+        <button id="callButton">Call</button>
+        <button id="endCallButton" style="display:none;">End Call</button>
+      </div>
+    </div>
+
+    <div id="caller" style="display:none;">
+      <h2 id="callerName"></h2>
+      <button id="answerButton">Answer</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.0/simplepeer.min.js"></script>
+<script>
+  // Now you can use SimplePeer
+  const peer = new SimplePeer({ initiator: true, trickle: false });
+</script>
+
+
+  <script>
+    const socket = io.connect('http://localhost:5000');
+    let myVideo = document.getElementById('myVideo');
+    let userVideo = document.getElementById('userVideo');
+    let connectionRef = null;
+
+    let me;
+    let stream;
+    let receivingCall = false;
+    let callerSignal;
+    let callerId;
+    let callAccepted = false;
+
+    // Access user media (video and audio)
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((currentStream) => {
+      stream = currentStream;
+      myVideo.srcObject = stream;
+    });
+
+    socket.on('me', (id) => {
+      me = id;
+      document.getElementById('copyId').onclick = () => {
+        navigator.clipboard.writeText(me);
+        alert("Copied to clipboard!");
+      };
+    });
+
+    socket.on('callUser', (data) => {
+      receivingCall = true;
+      callerId = data.from;
+      callerSignal = data.signal;
+      document.getElementById('callerName').textContent = `${data.name} is calling...`;
+      document.getElementById('caller').style.display = 'block';
+    });
+
+    document.getElementById('callButton').onclick = () => {
+      const idToCall = document.getElementById('idToCall').value;
+      const peer = new SimplePeer({ initiator: true, trickle: false, stream });
+
+      peer.on('signal', (signalData) => {
+        socket.emit('callUser', { userToCall: idToCall, signalData, from: me, name: document.getElementById('name').value });
+      });
+
+      peer.on('stream', (userStream) => {
+        userVideo.srcObject = userStream;
+      });
+
+      socket.on('callAccepted', (signal) => {
+        callAccepted = true;
+        peer.signal(signal);
+        document.getElementById('endCallButton').style.display = 'block';
+      });
+
+      connectionRef = peer;
+    };
+
+    document.getElementById('answerButton').onclick = () => {
+      const peer = new SimplePeer({ initiator: false, trickle: false, stream });
+
+      peer.on('signal', (signalData) => {
+        socket.emit('answerCall', { signal: signalData, to: callerId });
+      });
+
+      peer.on('stream', (userStream) => {
+        userVideo.srcObject = userStream;
+      });
+
+      peer.signal(callerSignal);
+      callAccepted = true;
+      document.getElementById('endCallButton').style.display = 'block';
+      document.getElementById('caller').style.display = 'none';
+
+      connectionRef = peer;
+    };
+
+    document.getElementById('endCallButton').onclick = () => {
+      callAccepted = false;
+      connectionRef.destroy();
+      document.getElementById('endCallButton').style.display = 'none';
+    };
+  </script>
+</body>
+</html>
