@@ -6,7 +6,7 @@ const app = express();
 const server = http.createServer(app);
 
 // CORS configuration for Express
-const allowedOrigins = ["https://exam-temp.onrender.com", "http://localhost:3000", "http://exam-temp.onrender.com"];
+const allowedOrigins = ["https://exam-temp.onrender.com", "http://localhost:3000", "http://exam-temp.onrender.com", "https://examproct-backend.onrender.com" , "https://exam-temp-1.onrender.com"];
 app.use(
   cors({
     origin: false,    // Allow requests from these origins
@@ -51,4 +51,4 @@ io.on("connection", (socket) => {
 
 // Start the server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port -> ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port -> ${PORT}`));
